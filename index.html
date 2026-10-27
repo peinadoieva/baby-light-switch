@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Baby Light Switch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Light Switch">
+<meta name="theme-color" content="#04060f">
+<style>
+  :root {
+    --off: #04060f;
+    --on: #fffbe8;
+    --on-edge: #ffeeb0;
+    --btn: #ff6a3d;
+    --btn-ring: #ffffff;
+    --btn-ring-on: #b9471a;
+    --fade: .28s;
+    color-scheme: dark;
+  }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
+    background: var(--off);
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  }
+  body { position: fixed; inset: 0; width: 100%; }
+
+  #stage {
+    position: fixed; inset: 0; overflow: hidden;
+    background-color: var(--off);
+    transition: background-color var(--fade) ease;
+  }
+  #stage.on { background-color: var(--on); }
+  #stage::before { /* warm glow, faded in so the light feels like it comes on */
+    content: ""; position: absolute; inset: 0; opacity: 0; pointer-events: none;
+    background: radial-gradient(circle at 50% 40%, var(--on) 0%, var(--on-edge) 100%);
+    transition: opacity var(--fade) ease;
+  }
+  #stage.on::before { opacity: 1; }
+
+  #light-btn {
+    position: absolute; z-index: 1;
+    left: var(--x, 50%); top: var(--y, 50%);
+    width: var(--s, 140px); height: var(--s, 140px);
+    transform: translate(-50%, -50%);
+    border: 0; padding: 0; margin: 0; border-radius: 50%;
+    background: var(--btn); cursor: pointer; outline: none;
+    box-shadow: 0 0 0 5px var(--btn-ring), 0 0 26px 8px rgb(255 140 90 / .55);
+    transition: box-shadow var(--fade) ease, opacity .16s ease;
+  }
+  #stage.on #light-btn {
+    box-shadow: 0 0 0 5px var(--btn-ring-on), 0 4px 14px 2px rgb(150 70 20 / .35);
+  }
+  #light-btn::after { /* switch dash */
+    content: ""; position: absolute; left: 50%; top: 50%; width: 9%; height: 38%;
+    transform: translate(-50%, -50%); border-radius: 99px; background: rgb(255 255 255 / .96);
+    opacity: .45; transition: opacity var(--fade) ease;
+  }
+  #stage.on #light-btn::after { opacity: 1; }
+  #light-btn.hide { opacity: 0; pointer-events: none; }
+
+  /* Hidden hold-to-open corner. Sits under the button so the button always wins a tap. */
+  #corner {
+    position: absolute; z-index: 0; top: 0; right: 0;
+    width: min(22vw, 22vh); height: min(22vw, 22vh);
+    background: transparent; border: 0; box-shadow: none;
+  }
+
+  /* Parent panel. The scrim covers the game so nothing behind it can be tapped. */
+  #panel {
+    position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / .6);
+    display: flex; align-items: flex-end; justify-content: center;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    box-sizing: border-box; touch-action: none;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #26203a;
+  }
+  #panel[hidden] { display: none; }
+  #panel .sheet {
+    box-sizing: border-box; width: 100%; max-width: 460px; max-height: 100%;
+    margin: 8px; padding: 14px; border-radius: 20px; background: #f4f1fa;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #panel h2 { margin: 0; font-size: 17px; font-weight: 700; }
+  #panel .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; }
+  #panel button {
+    font: inherit; font-weight: 700; min-height: 46px; min-width: 46px; border-radius: 12px;
+    border: 0; background: #ddd7ec; color: #26203a; cursor: pointer;
+  }
+  #panel button[aria-pressed="true"] { background: #26203a; color: #fff; }
+  #level-picker { display: flex; gap: 6px; }
+  #level-picker button { flex: 1 1 0; padding: 0; }
+  #panel #sound-toggle { min-width: 84px; }
+  #panel #reset-btn { background: #e8573a; color: #fff; }
+  #panel #close-btn { background: #26203a; color: #fff; }
+</style>
+</head>
+<body>
+<div id="stage" class="off">
+  <div id="corner"></div>
+  <button id="light-btn" type="button" aria-label="Light switch"></button>
+</div>
+
+<div id="panel" hidden>
+  <div class="sheet" role="dialog" aria-label="Parent controls">
+    <h2>Parent controls</h2>
+    <div class="row"><span>Sound</span><button id="sound-toggle" type="button" aria-pressed="true">On</button></div>
+    <div class="row"><span>Level</span></div>
+    <div id="level-picker">
+      <button type="button" data-level="0">L1</button>
+      <button type="button" data-level="1">L2</button>
+      <button type="button" data-level="2">L3</button>
+      <button type="button" data-level="3">L4</button>
+      <button type="button" data-level="4">L5</button>
+      <button type="button" data-level="5">L6</button>
+    </div>
+    <button id="reset-btn" type="button">Reset progress</button>
+    <button id="close-btn" type="button">Close</button>
+  </div>
+</div>
+
+<script type="module">
+  import { CONFIG, createState, completeRound, pickSpot, sanitizeLevel, sanitizeRounds, allowsSlide } from './engine.js';
+
+  const HOP_MS = 450;        // button is hidden and taps are ignored while it moves
+  const DEBOUNCE_MS = 350;   // a palm sends several touches over a few hundred ms; count one
+  const EDGE_PX = 16;        // minimum gap between the button ring and the screen edge
+
+  const stage = document.getElementById('stage');
+  const btn = document.getElementById('light-btn');
+  const now = () => performance.now();
+
+  // Saved settings. Storage can be missing or throw (private mode), so every access is guarded.
+  const store = {
+    get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch { /* run without saving */ } },
+  };
+
+  let state = createState(sanitizeLevel(store.get('bls.level')), sanitizeRounds(store.get('bls.rounds')));
+  function saveProgress() {
+    store.set('bls.level', String(state.level));
+    store.set('bls.rounds', String(state.rounds));
+  }
+  let sound = store.get('bls.sound') !== '0';
+  let spot = 0;
+  let on = false;
+  let busy = false;
+  let lastTouch = -Infinity;
+
+  const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi));
+
+  // Place and size the button for the current screen. Size is a percentage of the
+  // shorter screen side, and the whole button is kept on screen in any orientation.
+  function layout() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    const size = (CONFIG.SIZES[state.level] / 100) * Math.min(w, h);
+    const margin = size / 2 + EDGE_PX;
+    const [px, py] = CONFIG.SPOTS[spot];
+    stage.style.setProperty('--s', size.toFixed(1) + 'px');
+    stage.style.setProperty('--x', clamp((px / 100) * w, margin, w - margin).toFixed(1) + 'px');
+    stage.style.setProperty('--y', clamp((py / 100) * h, margin, h - margin).toFixed(1) + 'px');
+  }
+
+  function setLevel(level) {
+    state = createState(sanitizeLevel(level));
+    saveProgress();
+    layout();
+  }
+
+  function setSoundEnabled(value) {
+    sound = !!value;
+    store.set('bls.sound', sound ? '1' : '0');
+  }
+
+  // A soft click. The AudioContext is created on the first touch (iOS needs a user gesture to start
+  // audio, and for touch Safari counts the release, so it is also unlocked on pointerup/touchend).
+  let audio = null;
+  function getAudio() {
+    if (!sound) return null;
+    try {
+      if (!audio) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        audio = new Ctx();
+      }
+      const resumed = audio.resume && audio.resume();
+      if (resumed && resumed.catch) resumed.catch(() => {});
+      return audio;
+    } catch { return null; }
+  }
+  document.addEventListener('pointerup', getAudio);
+  document.addEventListener('touchend', getAudio);
+
+  function playTone(freq) {
+    const ctx = getAudio();
+    if (!ctx) return;
+    try {
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.linearRampToValueAtTime(0.25, t + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.07);
+    } catch { /* sound is optional */ }
+  }
+
+  // Keep the screen awake while the app is open (iOS 16.4+). Optional.
+  async function keepAwake() {
+    try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch { /* optional */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+  function setOn(value) {
+    on = value;
+    stage.classList.toggle('on', on);
+    stage.classList.toggle('off', !on);
+  }
+
+  function hop() {
+    busy = true;
+    btn.classList.add('hide');
+    setTimeout(() => {
+      spot = pickSpot(spot);
+      layout();
+      btn.classList.remove('hide');
+      busy = false;
+    }, HOP_MS);
+  }
+
+  function tap() {
+    setOn(!on);
+    playTone(on ? 440 : 330);
+    keepAwake();
+    if (!on) {
+      state = completeRound(state);
+      saveProgress();
+      hop();
+    }
+  }
+
+  // Parent panel: hold the top right corner for 3 seconds.
+  const HOLD_MS = 3000;
+  const corner = document.getElementById('corner');
+  const panel = document.getElementById('panel');
+  const soundToggle = document.getElementById('sound-toggle');
+  const picker = document.getElementById('level-picker');
+  let panelOpen = false;
+  let holdTimer = null;
+  let holdPointer = null;
+
+  function refreshPanel() {
+    soundToggle.textContent = sound ? 'On' : 'Off';
+    soundToggle.setAttribute('aria-pressed', String(sound));
+    for (const b of picker.children) b.setAttribute('aria-pressed', String(Number(b.dataset.level) === state.level));
+  }
+  function showPanel() { panelOpen = true; refreshPanel(); panel.hidden = false; }
+  function hidePanel() { panelOpen = false; panel.hidden = true; }
+
+  function cancelHold() { clearTimeout(holdTimer); holdTimer = null; holdPointer = null; }
+  corner.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (!e.isPrimary || panelOpen) return;
+    cancelHold();
+    holdPointer = e.pointerId;
+    holdTimer = setTimeout(() => { cancelHold(); showPanel(); }, HOLD_MS);
+  });
+  corner.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== holdPointer) return;
+    const r = corner.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) cancelHold();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) corner.addEventListener(type, cancelHold);
+
+  soundToggle.addEventListener('click', () => { setSoundEnabled(!sound); refreshPanel(); });
+  picker.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    setLevel(Number(b.dataset.level));
+    refreshPanel();
+  });
+  document.getElementById('reset-btn').addEventListener('click', () => { setLevel(0); refreshPanel(); });
+  document.getElementById('close-btn').addEventListener('click', hidePanel);
+
+  // One press of the button, whether the finger landed on it or slid onto it.
+  function press() {
+    const t = now();
+    const recent = t - lastTouch < DEBOUNCE_MS;
+    lastTouch = t; // every touch extends the window, so a rolling palm stays one tap
+    if (recent || busy || panelOpen) return;
+    tap();
+  }
+
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    press();
+  });
+
+  // Early levels: a finger that lands elsewhere and slides onto the button counts, once per touch.
+  const unslid = new Set(); // pointers that started off the button and have not reached it yet
+  function overButton(e) {
+    const r = btn.getBoundingClientRect();
+    return Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) <= r.width / 2;
+  }
+  stage.addEventListener('pointerdown', (e) => { e.preventDefault(); unslid.add(e.pointerId); });
+  stage.addEventListener('pointermove', (e) => {
+    if (!unslid.has(e.pointerId) || !allowsSlide(state.level) || !overButton(e)) return;
+    unslid.delete(e.pointerId); // this touch has had its one chance
+    press();
+  });
+  for (const type of ['pointerup', 'pointercancel']) stage.addEventListener(type, (e) => unslid.delete(e.pointerId));
+
+  // Everything else is inert: swallow touches so nothing zooms, scrolls or selects.
+  for (const type of ['touchmove', 'gesturestart', 'gesturechange', 'dblclick', 'contextmenu']) {
+    document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  }
+
+  window.addEventListener('resize', layout);
+  window.addEventListener('orientationchange', layout);
+
+  // Hooks for the browser checks.
+  window.__game = {
+    getState: () => ({ ...state, spot }),
+    isOn: () => on,
+    getSound: () => sound,
+    setLevel,
+    setSoundEnabled,
+    setSpot(i) { spot = i; layout(); },
+  };
+
+  layout();
+  keepAwake();
+</script>
+</body>
+</html>
