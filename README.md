@@ -11,7 +11,9 @@ A one-button cause-and-effect activity for very young children. Tap the glowing 
 
 ## Parent controls
 
-Hold the top right corner for 3 seconds. A panel opens with sound on/off, a level picker (L1 to L6), **Reset progress** and **Close**. The level is saved on the phone.
+Hold the top right corner, just below the clock, for 3 seconds. A faint line fills along the bottom of the area while you hold. A panel opens with sound on/off, a level picker (L1 to L6), **Reset progress** and **Close**. The level is saved on the phone.
+
+Backup: open the page with `?parent=1` on the end of the address (for example `.../baby-light-switch/?parent=1`) and the panel opens straight away. This works in Safari. An app launched from the Home Screen icon always starts normally, so use the hold there.
 
 ## Tuning
 

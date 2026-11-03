@@ -39,14 +39,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const browser = await chromium.launch();
   const errors = [];
 
-  async function newPage(viewport = { width: 390, height: 844 }, init) {
+  async function newPage(viewport = { width: 390, height: 844 }, init, query = '') {
     const ctx = await browser.newContext({ viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
     for (const script of [].concat(init || [])) await ctx.addInitScript(script);
     const page = await ctx.newPage();
     page.setDefaultTimeout(4000);
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-    await page.goto('http://127.0.0.1:8123' + PAGE);
+    await page.goto('http://127.0.0.1:8123' + PAGE + query);
     await page.waitForSelector('#light-btn', { timeout: 3000 });
     return page;
   }
@@ -561,6 +561,76 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       await sleep(200);
       assert(!(await isOn(p)), 'the light must stay off during the hop');
       await p.context().close();
+    });
+
+    // ---- Easier-to-open parent panel ----
+    const touch = async (cdp, type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+
+    await check('the hold area is at least a third of the shorter screen side', async () => {
+      const p = await newPage();
+      const b = await p.locator('#corner').boundingBox();
+      assert(b.width >= 0.33 * 390 - 1 && b.height >= 0.33 * 390 - 1, 'corner was ' + b.width + 'x' + b.height);
+      assert(Math.abs(b.x + b.width - 390) < 1 && b.y < 1, 'corner should sit in the top right');
+      await p.context().close();
+    });
+
+    await check('a wandering finger that stays near the corner still opens the panel', async () => {
+      const p = await newPage();
+      const cdp = await p.context().newCDPSession(p);
+      const b = await p.locator('#corner').boundingBox();
+      const start = { x: b.x + 12, y: b.y + b.height - 12 };
+      await touch(cdp, 'touchStart', [start]);
+      await sleep(500);
+      await touch(cdp, 'touchMove', [{ x: start.x - 25, y: start.y + 25 }]);
+      await sleep(2700);
+      await p.waitForSelector('#panel', { state: 'visible', timeout: 1500 });
+      await touch(cdp, 'touchEnd', []);
+      await p.context().close();
+    });
+
+    await check('the hold area starts below the clock strip: the strip does nothing, just below it works', async () => {
+      const p = await newPage();
+      await p.addStyleTag({ content: ':root { --safe-top: 50px !important; }' });
+      const b = await p.locator('#corner').boundingBox();
+      assert(Math.abs(b.y - 50) < 1, 'corner should start at y=50, was ' + b.y);
+      const cdp = await p.context().newCDPSession(p);
+      await touch(cdp, 'touchStart', [{ x: 370, y: 20 }]);
+      await sleep(3300);
+      await touch(cdp, 'touchEnd', []);
+      assert(!(await panelVisible(p)), 'a hold in the clock strip should do nothing');
+      await touch(cdp, 'touchStart', [{ x: 370, y: 70 }]);
+      await sleep(3200);
+      await touch(cdp, 'touchEnd', []);
+      assert(await panelVisible(p), 'a hold just below the strip should open the panel');
+      await p.context().close();
+    });
+
+    await check('a faint hint shows only while holding', async () => {
+      const p = await newPage();
+      const opacity = () => p.evaluate(() => Number(getComputedStyle(document.getElementById('hold-hint')).opacity));
+      assert((await opacity()) === 0, 'hint should be hidden at rest');
+      const cdp = await p.context().newCDPSession(p);
+      const b = await p.locator('#corner').boundingBox();
+      await touch(cdp, 'touchStart', [{ x: b.x + b.width / 2, y: b.y + b.height / 2 }]);
+      await sleep(1200);
+      const during = await opacity();
+      assert(during > 0 && during <= 0.7, 'hint should be faint but visible while holding, was ' + during);
+      await touch(cdp, 'touchEnd', []);
+      await sleep(300);
+      assert((await opacity()) === 0, 'hint should be hidden again after release');
+      await p.context().close();
+    });
+
+    await check('?parent=1 opens the panel at once; without it the panel stays closed', async () => {
+      const p = await newPage(undefined, undefined, '?parent=1');
+      assert(await panelVisible(p), 'panel should be open');
+      await tapEl(p, '#close-btn');
+      await sleep(200);
+      assert(!(await panelVisible(p)), 'Close should hide it');
+      await p.context().close();
+      const q = await newPage();
+      assert(!(await panelVisible(q)), 'panel should be closed without the parameter');
+      await q.context().close();
     });
 
     await check('no console errors', async () => {

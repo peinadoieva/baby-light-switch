@@ -17,6 +17,9 @@
     --btn-ring: #ffffff;
     --btn-ring-on: #b9471a;
     --fade: .28s;
+    --hold-ms: 3000ms;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
     color-scheme: dark;
   }
   html, body {
@@ -64,10 +67,17 @@
 
   /* Hidden hold-to-open corner. Sits under the button so the button always wins a tap. */
   #corner {
-    position: absolute; z-index: 0; top: 0; right: 0;
-    width: min(22vw, 22vh); height: min(22vw, 22vh);
+    position: absolute; z-index: 0; top: var(--safe-top); right: var(--safe-right); /* below the clock strip */
+    width: min(33vw, 33vh); height: min(33vw, 33vh);
     background: transparent; border: 0; box-shadow: none;
   }
+  /* A faint line that fills while the corner is held, so the parent can see it working. */
+  #hold-hint {
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 3px; border-radius: 2px;
+    background: rgb(128 128 128 / .9); opacity: 0; transform: scaleX(0); transform-origin: left; pointer-events: none;
+  }
+  #corner.holding #hold-hint { opacity: .5; animation: hold-fill var(--hold-ms) linear forwards; }
+  @keyframes hold-fill { to { transform: scaleX(1); } }
 
   /* Parent panel. The scrim covers the game so nothing behind it can be tapped. */
   #panel {
@@ -99,7 +109,7 @@
 </head>
 <body>
 <div id="stage" class="off">
-  <div id="corner"></div>
+  <div id="corner"><div id="hold-hint"></div></div>
   <button id="light-btn" type="button" aria-label="Light switch"></button>
 </div>
 
@@ -263,19 +273,27 @@
   }
   function showPanel() { panelOpen = true; refreshPanel(); panel.hidden = false; }
   function hidePanel() { panelOpen = false; panel.hidden = true; }
+  // Backup for the parent: opening the page with ?parent=1 shows the panel straight away.
+  if (new URLSearchParams(location.search).has('parent')) showPanel();
 
-  function cancelHold() { clearTimeout(holdTimer); holdTimer = null; holdPointer = null; }
+  const HOLD_SLACK_PX = 40; // a slightly wandering finger still counts as holding
+  function cancelHold() {
+    clearTimeout(holdTimer); holdTimer = null; holdPointer = null;
+    corner.classList.remove('holding');
+  }
   corner.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     if (!e.isPrimary || panelOpen) return;
     cancelHold();
     holdPointer = e.pointerId;
+    corner.classList.add('holding');
     holdTimer = setTimeout(() => { cancelHold(); showPanel(); }, HOLD_MS);
   });
   corner.addEventListener('pointermove', (e) => {
     if (e.pointerId !== holdPointer) return;
     const r = corner.getBoundingClientRect();
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) cancelHold();
+    if (e.clientX < r.left - HOLD_SLACK_PX || e.clientX > r.right + HOLD_SLACK_PX ||
+        e.clientY < r.top - HOLD_SLACK_PX || e.clientY > r.bottom + HOLD_SLACK_PX) cancelHold();
   });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave']) corner.addEventListener(type, cancelHold);
 
